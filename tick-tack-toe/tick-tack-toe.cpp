@@ -36,6 +36,7 @@ public:
 		TYPE_ORDERED = 0,
 		TYPE_NEGA_MAX,
 		TYPE_ALPHA_BETA,
+		TYPE_NEGA_SCOUT,
 	};
 
 	static AI* createAi(type type);
@@ -70,6 +71,16 @@ public:
 	bool think(Board &b);
 };
 
+class AI_nega_scout : public AI {
+private:
+	int evaluate(int limit, int alpha, int beta, Board &b, Mass::status current, int &best_x, int &best_y);
+public:
+	AI_nega_scout() {}
+	~AI_nega_scout() {}
+
+	bool think(Board &b);
+};
+
 AI* AI::createAi(type type)
 {
 	switch (type) {
@@ -78,6 +89,9 @@ AI* AI::createAi(type type)
 		break;
 	case TYPE_ALPHA_BETA:
 		return new AI_alpha_beta();
+		break;
+	case TYPE_NEGA_SCOUT:
+		return new AI_nega_scout();
 		break;
 	// case TYPE_ORDERED:
 	default:
@@ -93,6 +107,7 @@ class Board
 	friend class AI_ordered;
 	friend class AI_nega_max;
 	friend class AI_alpha_beta;
+	friend class AI_nega_scout;
 
 public:
 	enum WINNER{
@@ -272,6 +287,7 @@ bool AI_nega_max::think(Board &b)
 
 	return b.mass_[best_y][best_x].put(Mass::ENEMY);
 }
+
 int AI_alpha_beta::evaluate(int alpha, int beta, Board &b, Mass::status current, int &best_x, int &best_y)
 {
 	Mass::status next = (current == Mass::ENEMY) ? Mass::PLAYER : Mass::ENEMY;
@@ -317,10 +333,63 @@ bool AI_alpha_beta::think(Board &b)
 	return b.mass_[best_y][best_x].put(Mass::ENEMY);
 }
 
+int AI_nega_scout::evaluate(int limit, int alpha, int beta, Board &board, Mass::status current, int &best_x, int &best_y)
+{
+	if (limit-- == 0) return 0;// [‚³§ŒÀ‚É’B‚µ‚½
+
+	Mass::status next = (current == Mass::ENEMY) ? Mass::PLAYER : Mass::ENEMY;
+	// €Šˆ”»’è
+	int r = board.calc_result();
+	if (r == current) return +10000;// ŒÄ‚Ño‚µ‘¤‚ÌŸ‚¿
+	if (r == next) return -10000;// ŒÄ‚Ño‚µ‘¤‚Ì•‰‚¯
+	if (r == Board::DRAW) return 0;// ˆø•ª‚¯
+
+	int a = alpha, b = beta;
+
+	for (int y = 0; y < Board::BOARD_SIZE; y++) {
+		for (int x = 0; x < Board::BOARD_SIZE; x++) {
+			Mass &m = board.mass_[y][x];
+			if (m.getStatus() != Mass::BLANK) continue;
+
+			m.setStatus(current);// Ÿ‚Ìè‚ğ‘Å‚Â
+			int dummy;
+			int score = -evaluate(limit, -b, -a, board, next, dummy, dummy);
+			if (a < score && score < beta && !(x == 0 && y == 0) && limit <= 2)
+			{
+				a = -evaluate(limit, -beta, -score, board, next, dummy, dummy);
+			}
+			m.setStatus(Mass::BLANK);// è‚ğ–ß‚·
+
+			if (a < score) {
+				a = score;
+				best_x = x;
+				best_y = y;
+			}
+			
+			if (beta <= a) {
+				return a;
+			}
+
+			a = a + 1;
+		}
+	}
+	return a;
+}
+
+bool AI_nega_scout::think(Board &b)
+{
+	int best_x, best_y;
+
+	if (evaluate(5, -10000, 10000, b, Mass::ENEMY, best_x, best_y) <= -9999)
+		return false; // ‘Å‚Ä‚éè‚Í‚È‚©‚Á‚½
+
+	return b.mass_[best_y][best_x].put(Mass::ENEMY);
+}
+
 class Game
 {
 private:
-	const AI::type ai_type = AI::TYPE_ALPHA_BETA;
+	const AI::type ai_type = AI::TYPE_NEGA_SCOUT;
 
 	Board board_;
 	Board::WINNER winner_ = Board::NOT_FINISED;
