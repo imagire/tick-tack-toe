@@ -1,6 +1,3 @@
-// tick-tack-toe.cpp : コンソール アプリケーションのエントリ ポイントを定義します。
-//
-
 #include "stdafx.h"
 #include <memory>
 #include <iostream>
@@ -54,7 +51,7 @@ public:
 
 class AI_nega_max : public AI{
 private:
-	int evaluate(Board &b, Mass::status next, signed int sign);
+	int evaluate(Board &b, Mass::status next, int &best_x, int &best_y);
 public:
 	AI_nega_max() {}
 	~AI_nega_max() {}
@@ -68,7 +65,8 @@ AI* AI::createAi(type type)
 	case TYPE_NEGA_MAX:
 		return new AI_nega_max();
 		break;
-	default: // case TYPE_ORDERED:
+	// case TYPE_ORDERED:
+	default:
 		return new AI_ordered();
 		break;
 	}
@@ -97,6 +95,7 @@ private:
 public:
 	int calc_result() const
 	{
+		// 縦横斜めに同じキャラが入っているか検索
 		// 横
 		for (int y = 0; y < BOARD_SIZE; y++) {
 			Mass::status winner = mass_[y][0].getStatus();
@@ -105,9 +104,7 @@ public:
 			for (; x < BOARD_SIZE; x++) {
 				if (mass_[y][x].getStatus() != winner) break;
 			}
-			if (x == BOARD_SIZE) {
-				return winner;
-			}
+			if (x == BOARD_SIZE) {return winner;}
 		}
 		// 縦
 		for (int x = 0; x < BOARD_SIZE; x++) {
@@ -117,9 +114,7 @@ public:
 			for (; y < BOARD_SIZE; y++) {
 				if (mass_[y][x].getStatus() != winner) break;
 			}
-			if (y == BOARD_SIZE) {
-				return winner;
-			}
+			if (y == BOARD_SIZE) {return winner;}
 		}
 		// 斜め
 		{
@@ -129,9 +124,7 @@ public:
 				for (; idx < BOARD_SIZE; idx++) {
 					if (mass_[idx][idx].getStatus() != winner) break;
 				}
-				if (idx == BOARD_SIZE) {
-					return winner;
-				}
+				if (idx == BOARD_SIZE) {return winner;}
 			}
 		}
 		{
@@ -141,12 +134,10 @@ public:
 				for (; idx < BOARD_SIZE; idx++) {
 					if (mass_[BOARD_SIZE - 1 - idx][idx].getStatus() != winner) break;
 				}
-				if (idx == BOARD_SIZE) {
-					return winner;
-				}
+				if (idx == BOARD_SIZE) {return winner;}
 			}
 		}
-		// 上記勝敗がついておらず、残りのマスがなければ引分け
+		// 上記勝敗がついておらず、空いているマスがなければ引分け
 		for (int y = 0; y < BOARD_SIZE; y++) {
 			for (int x = 0; x < BOARD_SIZE; x++) {
 				Mass::status fill = mass_[y][x].getStatus();
@@ -215,63 +206,33 @@ bool AI_ordered::think(Board &b)
 }
 
 
-// int depth = 0;
-int AI_nega_max::evaluate(Board &b, Mass::status current, signed int sign)
+int AI_nega_max::evaluate(Board &b, Mass::status current, int &best_x, int &best_y)
 {
 	Mass::status next = (current == Mass::ENEMY) ? Mass::PLAYER : Mass::ENEMY;
 	// 死活判定
 	int r = b.calc_result();
-	if (r == Mass::ENEMY) return +10000;// AIの勝ち
-	if (r == Mass::PLAYER) return -10000;// AIの負け
+	if (r == current) return +10000;// 呼び出し側の勝ち
+	if (r == next) return -10000;// 呼び出し側の負け
 	if (r == Board::DRAW) return 0;// 引分け
 
-	int score_max = -10001;
-//	depth++;
-//
+	int score_max = -10001;// 打たないのは最悪
 
 	for (int y = 0; y < Board::BOARD_SIZE; y++) {
 		for (int x = 0; x < Board::BOARD_SIZE; x++) {
 			Mass &m = b.mass_[y][x];
 			if (m.getStatus() != Mass::BLANK) continue;
 
-			m.setStatus(next);// 次の手を打つ
-			int score = sign * evaluate(b, next, -sign);
+			m.setStatus(current);// 次の手を打つ
+			int dummy;
+			int score = -evaluate(b, next, dummy, dummy);
 			m.setStatus(Mass::BLANK);// 手を戻す
 
 //
 //			for (int i = 0; i < depth; i++) {
 //				std::cout << " ";
 //			}
-//			std::cout << x + 1 << (char)('a' + y) << " " << sign * score << std::endl;
+//			std::cout << x + 1 << (char)('a' + y) << " " << score << std::endl;
 //
-			score_max = (score_max < score) ? score : score_max;// 最良の結果を保存
-		}
-	}
-//	depth--;
-//
-
-	return sign * score_max;
-}
-
-bool AI_nega_max::think(Board &b)
-{
-	int best_x = -1, best_y;
-	int score_max = -10001;
-
-	for (int y = 0; y < Board::BOARD_SIZE; y++) {
-		for (int x = 0; x < Board::BOARD_SIZE; x++) {
-
-			Mass &m = b.mass_[y][x];
-			if (m.getStatus() != Mass::BLANK) continue;// 打てないマス
-
-			m.setStatus(Mass::ENEMY);// 手を打つ
-
-			int score = evaluate(b, Mass::ENEMY, -1);
-//
-//			std::cout << "* " << x+1 << (char)('a' + y) << " " << score << std::endl;
-//
-			m.setStatus(Mass::BLANK);// 手を戻す
-
 			if (score_max < score) {
 				score_max = score;
 				best_x = x;
@@ -279,7 +240,17 @@ bool AI_nega_max::think(Board &b)
 			}
 		}
 	}
-	if (best_x < 0) return false; // 見つからなかった
+
+	return score_max;
+}
+
+bool AI_nega_max::think(Board &b)
+{
+	int best_x = -1, best_y;
+
+	evaluate(b, Mass::ENEMY, best_x, best_y);
+
+	if (best_x < 0) return false; // 打てる手はなかった
 
 	return b.mass_[best_y][best_x].put(Mass::ENEMY);
 }
@@ -367,7 +338,6 @@ int main()
 			if (winner) {
 				show_end_message(winner);
 				break;
-
 			}
 
 			if (0 == turn) {
