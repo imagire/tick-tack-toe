@@ -37,6 +37,7 @@ public:
 		TYPE_NEGA_MAX,
 		TYPE_ALPHA_BETA,
 		TYPE_NEGA_SCOUT,
+		TYPE_MONTE_CARLO,
 	};
 
 	static AI* createAi(type type);
@@ -81,6 +82,16 @@ public:
 	bool think(Board &b);
 };
 
+class AI_monte_carlo : public AI {
+private:
+	int evaluate(int limit, Board &b, Mass::status current, int &best_x, int &best_y);
+public:
+	AI_monte_carlo() {}
+	~AI_monte_carlo() {}
+
+	bool think(Board &b);
+};
+
 AI* AI::createAi(type type)
 {
 	switch (type) {
@@ -93,7 +104,10 @@ AI* AI::createAi(type type)
 	case TYPE_NEGA_SCOUT:
 		return new AI_nega_scout();
 		break;
-	// case TYPE_ORDERED:
+	case TYPE_MONTE_CARLO:
+		return new AI_monte_carlo();
+		break;
+		// case TYPE_ORDERED:
 	default:
 		return new AI_ordered();
 		break;
@@ -108,6 +122,7 @@ class Board
 	friend class AI_nega_max;
 	friend class AI_alpha_beta;
 	friend class AI_nega_scout;
+	friend class AI_monte_carlo;
 
 public:
 	enum WINNER{
@@ -118,12 +133,12 @@ public:
 	};
 private:
 	enum {
-		BOARD_SIZE = 3,
+		BOARD_SIZE = 5,
 	};
 	Mass mass_[BOARD_SIZE][BOARD_SIZE];
 
 public:
-	Board() { 
+	Board() {
 //		mass_[0][0].setStatus(Mass::ENEMY); mass_[0][1].setStatus(Mass::PLAYER); 
 	}
 	Board::WINNER calc_result() const
@@ -380,8 +395,91 @@ bool AI_nega_scout::think(Board &b)
 {
 	int best_x, best_y;
 
-	if (evaluate(5, -10000, 10000, b, Mass::ENEMY, best_x, best_y) <= -9999)
+	if (evaluate(9, -10000, 10000, b, Mass::ENEMY, best_x, best_y) <= -9999)
 		return false; // ‘Å‚Ä‚éŽè‚Í‚È‚©‚Á‚½
+
+	return b.mass_[best_y][best_x].put(Mass::ENEMY);
+}
+
+int AI_monte_carlo::evaluate(int fiest_time, Board &board, Mass::status current, int &best_x, int &best_y)
+{
+	Mass::status next = (current == Mass::ENEMY) ? Mass::PLAYER : Mass::ENEMY;
+	// Ž€Šˆ”»’è
+	int r = board.calc_result();
+	if (r == current) return +10000;// ŒÄ‚Ño‚µ‘¤‚ÌŸ‚¿
+	if (r == next) return -10000;// ŒÄ‚Ño‚µ‘¤‚Ì•‰‚¯
+	if (r == Board::DRAW) return 0;// ˆø•ª‚¯
+
+	char x_table[Board::BOARD_SIZE*Board::BOARD_SIZE];
+	char y_table[Board::BOARD_SIZE*Board::BOARD_SIZE];
+	int wins[Board::BOARD_SIZE*Board::BOARD_SIZE];// Ÿ—˜”
+	int loses[Board::BOARD_SIZE*Board::BOARD_SIZE];// ”s–k”
+	int blank_mass_num = 0;
+	// ‹ó‚¢‚Ä‚¢‚éƒ}ƒX‚Ì”‚ð”‚¦A”z—ñ‚Æ‚µ‚ÄˆÊ’u‚ðŠm•Û‚·‚é
+	for (int y = 0; y < Board::BOARD_SIZE; y++) {
+		for (int x = 0; x < Board::BOARD_SIZE; x++) {
+			Mass &m = board.mass_[y][x];
+			if (m.getStatus() == Mass::BLANK) {
+				x_table[blank_mass_num] = x;
+				y_table[blank_mass_num] = y;
+				wins[blank_mass_num] = loses[blank_mass_num] = 0;
+				blank_mass_num++;
+			}
+		}
+	}
+	if (fiest_time) {
+		// ˆê”Ôã‚ÌŠK‘w‚Åƒ‰ƒ“ƒ_ƒ€‚ÉŽw‚·‚Ì‚ðŒJ‚è•Ô‚·
+		for (int i = 0; i < 10000; i++) {
+			int idx = rand() % blank_mass_num;
+			Mass &m = board.mass_[y_table[idx]][x_table[idx]];
+
+			m.setStatus(current);// ŽŸ‚ÌŽè‚ð‘Å‚Â
+			int dummy;
+			int score = -evaluate(false, board, next, dummy, dummy);
+			m.setStatus(Mass::BLANK);// Žè‚ð–ß‚·
+
+			if (0 <= score) {
+				wins[idx]++;
+			}else{
+				loses[idx]++;
+			}
+		}
+		int score_max = -9999;
+		for (int idx = 0; idx < blank_mass_num; idx++) {
+			int score = wins[idx] + loses[idx];
+			if (0 != score) {
+				score = 100 * wins[idx] / score;// Ÿ—¦
+			}
+			if (score_max < score) {
+				score_max = score;
+				best_x = x_table[idx];
+				best_y = y_table[idx];
+			}
+			std::cout << x_table[idx] + 1 << (char)('a' + y_table[idx]) << " " << score << "% (win:" << wins[idx] << ", lose:" << loses[idx] << ")" << std::endl;
+		}
+
+		return score_max;
+	}
+
+	// ãˆÊ‚Å‚È‚¢‘w‚Í‚Ç‚ñ‚Ç‚ñ“K“–‚É‘Å‚Á‚Ä‚¢‚­
+	int idx = rand() % blank_mass_num;
+	Mass &m = board.mass_[y_table[idx]][x_table[idx]];
+	m.setStatus(current);// ŽŸ‚ÌŽè‚ð‘Å‚Â
+	int dummy;
+	int score = -evaluate(false, board, next, dummy, dummy);
+	m.setStatus(Mass::BLANK);// Žè‚ð–ß‚·
+
+	return score;
+
+}
+
+bool AI_monte_carlo::think(Board &b)
+{
+	int best_x = -1, best_y;
+
+	evaluate(true, b, Mass::ENEMY, best_x, best_y);
+
+	if (best_x < 0) return false; // ‘Å‚Ä‚éŽè‚Í‚È‚©‚Á‚½
 
 	return b.mass_[best_y][best_x].put(Mass::ENEMY);
 }
@@ -389,7 +487,7 @@ bool AI_nega_scout::think(Board &b)
 class Game
 {
 private:
-	const AI::type ai_type = AI::TYPE_NEGA_SCOUT;
+	const AI::type ai_type = AI::TYPE_MONTE_CARLO;
 
 	Board board_;
 	Board::WINNER winner_ = Board::NOT_FINISED;
