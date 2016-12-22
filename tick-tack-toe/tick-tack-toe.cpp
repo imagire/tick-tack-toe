@@ -149,7 +149,7 @@ public:
 	};
 private:
 	enum {
-		BOARD_SIZE = 5,
+		BOARD_SIZE = 3,
 	};
 	Mass mass_[BOARD_SIZE][BOARD_SIZE];
 
@@ -568,7 +568,7 @@ int AI_montecarlo_tree::evaluate(bool all_search, int sim_count, Board &board, M
 			}
 			// 閾値を超えれば、木を成長させる
 			if (sim_count/10 < count[idx] // 閾値は10％以上の探索回数
-				&& 100 < sim_count) {// 回数が少ないときはランダムの精度が下がるので、成長させない
+				&& 10 < sim_count) {// 回数が少ないときはランダムの精度が下がるので、成長させない
 				m.setStatus(current);// 次の手を打つ
 				scores[idx] = 100-evaluate(true, (int)sqrt(sim_count), board, next, dummy, dummy);
 				m.setStatus(Mass::BLANK);// 手を戻す
@@ -583,14 +583,15 @@ int AI_montecarlo_tree::evaluate(bool all_search, int sim_count, Board &board, M
 			}else if (0 == count[idx]) {
 				score = 0;// 一度も通らなかった
 			}else {
-				score = 100 * wins[idx] / count[idx];// 勝率
+				double c = 1. * sqrt(2 * log(sim_count) / count[idx]);
+				score = 100 * wins[idx] / count[idx] + (int)(c);// 勝率
 			}
 			if (score_max < score) {
 				score_max = score;
 				best_x = x_table[idx];
 				best_y = y_table[idx];
 			}
-//			std::cout << x_table[idx] + 1 << (char)('a' + y_table[idx]) << " " << score << "% (win:" << wins[idx] << ", count:" << count[idx] << ")" << std::endl;
+			std::cout << x_table[idx] + 1 << (char)('a' + y_table[idx]) << " " << score << "% (win:" << wins[idx] << ", count:" << count[idx] << ")" << std::endl;
 		}
 
 		return score_max;
