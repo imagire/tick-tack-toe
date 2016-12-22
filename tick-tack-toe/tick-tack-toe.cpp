@@ -35,6 +35,7 @@ public:
 	enum type {
 		TYPE_ORDERED = 0,
 		TYPE_NEGA_MAX,
+		TYPE_ALPHA_BETA,
 	};
 
 	static AI* createAi(type type);
@@ -51,10 +52,20 @@ public:
 
 class AI_nega_max : public AI{
 private:
-	int evaluate(Board &b, Mass::status next, int &best_x, int &best_y);
+	int evaluate(Board &b, Mass::status current, int &best_x, int &best_y);
 public:
 	AI_nega_max() {}
 	~AI_nega_max() {}
+
+	bool think(Board &b);
+};
+
+class AI_alpha_beta : public AI {
+private:
+	int evaluate(int alpha, int beta, Board &b, Mass::status current, int &best_x, int &best_y);
+public:
+	AI_alpha_beta() {}
+	~AI_alpha_beta() {}
 
 	bool think(Board &b);
 };
@@ -64,6 +75,9 @@ AI* AI::createAi(type type)
 	switch (type) {
 	case TYPE_NEGA_MAX:
 		return new AI_nega_max();
+		break;
+	case TYPE_ALPHA_BETA:
+		return new AI_alpha_beta();
 		break;
 	// case TYPE_ORDERED:
 	default:
@@ -78,9 +92,10 @@ class Board
 {
 	friend class AI_ordered;
 	friend class AI_nega_max;
+	friend class AI_alpha_beta;
 
 public:
-	enum {
+	enum WINNER{
 		NOT_FINISED = 0,
 		PLAYER,
 		ENEMY,
@@ -93,7 +108,10 @@ private:
 	Mass mass_[BOARD_SIZE][BOARD_SIZE];
 
 public:
-	int calc_result() const
+	Board() { 
+//		mass_[0][0].setStatus(Mass::ENEMY); mass_[0][1].setStatus(Mass::PLAYER); 
+	}
+	Board::WINNER calc_result() const
 	{
 		// 縦横斜めに同じキャラが入っているか検索
 		// 横
@@ -104,7 +122,7 @@ public:
 			for (; x < BOARD_SIZE; x++) {
 				if (mass_[y][x].getStatus() != winner) break;
 			}
-			if (x == BOARD_SIZE) {return winner;}
+			if (x == BOARD_SIZE) {return (Board::WINNER)winner;}
 		}
 		// 縦
 		for (int x = 0; x < BOARD_SIZE; x++) {
@@ -114,7 +132,7 @@ public:
 			for (; y < BOARD_SIZE; y++) {
 				if (mass_[y][x].getStatus() != winner) break;
 			}
-			if (y == BOARD_SIZE) {return winner;}
+			if (y == BOARD_SIZE) {return(Board::WINNER) winner;}
 		}
 		// 斜め
 		{
@@ -124,7 +142,7 @@ public:
 				for (; idx < BOARD_SIZE; idx++) {
 					if (mass_[idx][idx].getStatus() != winner) break;
 				}
-				if (idx == BOARD_SIZE) {return winner;}
+				if (idx == BOARD_SIZE) {return (Board::WINNER)winner;}
 			}
 		}
 		{
@@ -134,7 +152,7 @@ public:
 				for (; idx < BOARD_SIZE; idx++) {
 					if (mass_[BOARD_SIZE - 1 - idx][idx].getStatus() != winner) break;
 				}
-				if (idx == BOARD_SIZE) {return winner;}
+				if (idx == BOARD_SIZE) {return (Board::WINNER)winner;}
 			}
 		}
 		// 上記勝敗がついておらず、空いているマスがなければ引分け
@@ -254,14 +272,58 @@ bool AI_nega_max::think(Board &b)
 
 	return b.mass_[best_y][best_x].put(Mass::ENEMY);
 }
+int AI_alpha_beta::evaluate(int alpha, int beta, Board &b, Mass::status current, int &best_x, int &best_y)
+{
+	Mass::status next = (current == Mass::ENEMY) ? Mass::PLAYER : Mass::ENEMY;
+	// 死活判定
+	int r = b.calc_result();
+	if (r == current) return +10000;// 呼び出し側の勝ち
+	if (r == next) return -10000;// 呼び出し側の負け
+	if (r == Board::DRAW) return 0;// 引分け
+
+	int score_max = -9999;// 打たないで投了
+
+	for (int y = 0; y < Board::BOARD_SIZE; y++) {
+		for (int x = 0; x < Board::BOARD_SIZE; x++) {
+			Mass &m = b.mass_[y][x];
+			if (m.getStatus() != Mass::BLANK) continue;
+
+			m.setStatus(current);// 次の手を打つ
+			int dummy;
+			int score = -evaluate(-beta, -alpha,  b, next, dummy, dummy);
+			m.setStatus(Mass::BLANK);// 手を戻す
+
+			if (beta < score) {
+				return (score_max < score) ? score : score_max;// 最悪の値より悪い
+			}
+			if (score_max < score) {
+				score_max = score;
+				alpha = (alpha < score_max) ? score_max : alpha;// α値を更新
+				best_x = x;
+				best_y = y;
+			}
+		}
+	}
+	return score_max;
+}
+
+bool AI_alpha_beta::think(Board &b)
+{
+	int best_x, best_y;
+
+	if (evaluate(-10000, 10000, b, Mass::ENEMY, best_x, best_y) <= -9999)
+		return false; // 打てる手はなかった
+
+	return b.mass_[best_y][best_x].put(Mass::ENEMY);
+}
 
 class Game
 {
 private:
-	const AI::type ai_type = AI::TYPE_NEGA_MAX;
+	const AI::type ai_type = AI::TYPE_ALPHA_BETA;
 
 	Board board_;
-	int winner_ = Board::NOT_FINISED;
+	Board::WINNER winner_ = Board::NOT_FINISED;
 	AI *pAI_ = nullptr;
 
 public:
@@ -285,7 +347,7 @@ public:
 		return success;
 	}
 
-	int is_finised() {
+	Board::WINNER is_finised() {
 		return winner_;
 	}
 
@@ -306,7 +368,7 @@ void show_start_message()
 	std::cout << "========================" << std::endl;
 }
 
-void show_end_message(int winner)
+void show_end_message(Board::WINNER winner)
 {
 	if (winner == Board::PLAYER) {
 		std::cout << "You win!" << std::endl;
@@ -334,7 +396,7 @@ int main()
 			game->show();// 盤面表示
 
 			// 勝利判定
-			int winner = game->is_finised();
+			Board::WINNER winner = game->is_finised();
 			if (winner) {
 				show_end_message(winner);
 				break;
@@ -350,7 +412,9 @@ int main()
 			}
 			else {
 				// AI
-				game->think();
+				if (!game->think()) {
+					show_end_message(Board::WINNER::PLAYER);// 投了
+				}
 				std::cout << std::endl;
 			}
 			// プレイヤーとAIの切り替え
