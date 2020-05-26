@@ -1,1 +1,1 @@
-# tick-tack-toe
+# 3目並べ
